@@ -14,10 +14,10 @@ I initiated this project when I was about to read 心體與性體 deeply.  As I 
 
 Run OCR:
 ```bash
-python ocr.py
+python '牟宗三全集5 心體與性體（第一冊）.py'
 ```
 
-It produces `ocr.tex` which contains the main result, and `crosscheck-ocr.tex` which additionally interleaves original book pages for manual crosschecking.  It takes ~1 hour to generate all 700 pages.
+It produces `ocr.tex` which contains the main result, and `crosscheck.tex` which additionally interleaves original book pages for manual crosschecking.  It takes ~1 hour to generate all 700 pages.
 
 Convert to PDF (run two times so table of contents work properly):
 ```bash
