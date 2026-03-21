@@ -33,8 +33,8 @@ preemble = r"""\documentclass[12pt]{ctexbook}
     aftername = {\quad},
     format = {\LARGE\kaishu},
     pagestyle = fancy,
-    beforeskip = 40pt,
-    afterskip = 30pt
+    beforeskip = 0pt,
+    afterskip = 20pt
   },
   section = {
     name = {第,節},
@@ -88,9 +88,9 @@ def write_header(tex, matter, page_number, media_row, text_width):
 
 
 class State:
-    def __init__(self, prev_page_state, special_chapters):
+    def __init__(self, prev_page_state, plugins):
         self.prev_page_state = prev_page_state
-        self.special_chapters = special_chapters
+        self.plugins = plugins
         self.state = None
         self.data = []
 
@@ -175,7 +175,10 @@ class State:
         state = self.state
         if tab == 1:
             sentence = r" \quad ".join(texts)
-            if state == "paragraph":
+            if "close quotation" in self.plugins and state == "quotation":
+                self.pop(tex)
+                self.paragraph(tex, sentence, False)
+            elif state == "paragraph":
                 tex.writeln(sentence)
             elif state == "maybe itemize":
                 self.pop(tex)
@@ -188,7 +191,7 @@ class State:
                 tex.writeln(sentence)
             elif state:
                 raise Exception(f"tab 1 paragraph follow {state} closely {texts}")
-            elif state is None and texts[0] in self.special_chapters:
+            elif state is None and texts[0] == self.plugins.get("chapter", None):
                 tex.writeln(r"\chapter{" + sentence + "}")
                 tex.writeln()
             elif state is None and density.match_chapter(texts[0], "第", "章"):
@@ -209,9 +212,6 @@ class State:
             elif density.split_chapter(texts[0])[0].endswith("段"):
                 self.state = "chapter"
                 tex.write(r"\subsection{" + density.split_chapter(texts[0])[1] + r" \quad ".join(texts[1:]))
-            elif texts[0].startswith("甲乙丙"):
-                self.state = "chapter"
-                tex.write(r"\subsection*{" + sentence)
             elif matter == "appendix" and density.split_number(texts[0])[0]:
                 if right_indent > 20:
                     self.state = "section*"
@@ -226,7 +226,28 @@ class State:
             number, content = density.split_number(sentence)
             if not number:
                 number, content = density.split_chapter(sentence)
-            if not state:
+            if not number and sentence.startswith("附識"):
+                number, content = density.split_number(sentence[2:])
+                number = sentence[:2] + number
+            arabic_number, arabic_content = density.split_number(sentence, patterns=["0123456789"])
+            if "close quotation" in self.plugins and state == "quotation":
+                self.pop(tex)
+                self.paragraph(tex, sentence)
+            elif "close chapter" in self.plugins and state == "chapter":
+                self.pop(tex)
+                self.paragraph(tex, sentence)
+            elif "tab 2 quotation itemize" in self.plugins and not state and arabic_number and arabic_content:
+                self.quotation(tex)
+                tex.writeln(r"\begin{itemize}[nosep, topsep=0pt, partopsep=0pt, leftmargin=1.2em]")
+                tex.writeln(r"\item[" + arabic_number + "] " + arabic_content + " % plugin tab 2 quotation itemize")
+                self.state = "quotation itemize"
+            elif "tab 2 quotation itemize" in self.plugins and state == "quotation itemize" and arabic_number and arabic_content:
+                tex.writeln(r"\item[" + arabic_number + "] " + arabic_content + " % plugin tab 2 quotation itemize")
+            elif "tab 2 quotation itemize" in self.plugins and state == "quotation" and arabic_number and arabic_content:
+                tex.writeln(r"\begin{itemize}[nosep, topsep=0pt, partopsep=0pt, leftmargin=1.2em]")
+                tex.writeln(r"\item[" + arabic_number + "] " + arabic_content + " % plugin tab 2 quotation itemize")
+                self.state = "quotation itemize"
+            elif not state:
                 if number and content:
                     self.maybe_itemize(number, content)
                 else:
@@ -255,7 +276,30 @@ class State:
         elif tab == 3:
             sentence = r" \quad ".join(texts)
             number, content = density.split_number(sentence)
-            if indent_diff < -12 and state in [None, "paragraph", "itemize"] and number and content:
+            arabic_number, arabic_content = density.split_number(sentence, patterns=["0123456789"])
+            if "close quotation" in self.plugins and state == "paragraph":
+                self.pop(tex)
+                self.quotation(tex)
+                tex.writeln(sentence)
+            elif "tab 2 quotation itemize" in self.plugins and state == "quotation itemize":
+                if arabic_number and arabic_content:
+                    tex.writeln(r"\item[" + arabic_number + "] " + arabic_content + " % plugin tab 2 quotation itemize")
+                else:
+                    tex.writeln(sentence)
+            elif "tab 2 quotation itemize" in self.plugins and state is None and self.prev_page_state == "quotation itemize":
+                self.quotation(tex)
+                tex.writeln(r"\begin{itemize}[nosep, topsep=0pt, partopsep=0pt, leftmargin=1.2em]")
+                if arabic_number and arabic_content:
+                    tex.writeln(r"\item[" + arabic_number + "] " + arabic_content + " % plugin tab 2 quotation itemize")
+                else:
+                    tex.writeln(r"\item[] " + sentence + " % plugin tab 2 quotation itemize")
+                self.state = "quotation itemize"
+            elif "tab 2 quotation itemize" in self.plugins and not state and arabic_number and arabic_content:
+                self.quotation(tex)
+                tex.writeln(r"\begin{itemize}[nosep, topsep=0pt, partopsep=0pt, leftmargin=1.2em]")
+                tex.writeln(r"\item[" + arabic_number + "] " + arabic_content + " % plugin tab 2 quotation itemize")
+                self.state = "quotation itemize"
+            elif indent_diff < -12 and state in [None, "paragraph", "itemize"] and number and content:
                 # See 心體與性體第一冊 page 89, 636
                 print(f"tab 3 follow {state} closely; treat as itemize.")
                 if state != "itemize":
@@ -302,13 +346,18 @@ class State:
                 self.data.append(sentence)
             else:
                 raise Exception(f"tab 3 quotation follow {state} closely {texts}")
-        elif tab == 5 and len(texts) == 3 and '*' in texts:
+        elif tab == 5 and len(texts) == 3 and all(len(x) == 1 for x in texts) and '*' in texts:
             self.pop_all(tex)
             tex.writeln(r"\hfill*\hfill*\hfill*\hfill\mbox{}")
             tex.writeln()
         elif tab == 4 or tab == 5:
             sentence = r" \quad ".join(texts)
-            if not state:
+            if "tab 2 quotation itemize" in self.plugins and state is None and self.prev_page_state in ["quotation maybe itemize", "quotation itemize"]:
+                self.quotation(tex)
+                tex.writeln(r"\begin{itemize}[nosep, topsep=0pt, partopsep=0pt, leftmargin=1.2em]")
+                tex.writeln(r"\item[] " + sentence + " % plugin tab 2 quotation itemize continued")
+                self.state = "quotation itemize"
+            elif not state:
                 if state is None and self.prev_page_state in ["maybe itemize", "itemize"]:
                     self.itemize(tex)
                     tex.writeln(r"\item[] " + sentence + " % continued maybe itemize")
@@ -347,7 +396,7 @@ class State:
             tex.writeln()
 
 
-def write_page(tex, tabstopper, matter, page_number, media_rows, left_margin, image_black, prev_page_state, special_chapters=[]):
+def write_page(tex, matter, page_number, media_rows, left_margin, tabstopper, image_black, prev_page_state, plugins={}):
     text_rows = [box_texts for media, _, box_texts in media_rows if media == "text"]
     left_margin = tabstopper.normalize_left_margin(left_margin, text_rows)
     for d, text in tabstopper.tab_outliers(left_margin, text_rows):
@@ -355,7 +404,7 @@ def write_page(tex, tabstopper, matter, page_number, media_rows, left_margin, im
             print(f"tab outlier: {d} {text}")
 
     prev_bound = (0, 0, 0, 0)
-    state = State(prev_page_state, special_chapters)
+    state = State(prev_page_state, plugins)
     prev_right_indent = None
     for media, bound, box_texts in media_rows:
         if media == "figure":
