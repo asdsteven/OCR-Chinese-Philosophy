@@ -227,7 +227,9 @@ class OCRCache:
             f.write(f"{filename},{rl},{rh},{cl},{ch},{text}\n")
 
 
-def ocr(filename, image, ocr_cache, verbose=False, predict=True):
+def ocr(filename, image, ocr_cache, verbose=False, predict=True, plugins={}):
+    further_trim = plugins.get("further trim", 0)
+
     print("ocr row densities")
     image_black = np.mean(1 - image, axis=2)
 
@@ -251,7 +253,7 @@ def ocr(filename, image, ocr_cache, verbose=False, predict=True):
         print(f"<blank page>")
         return None, None
     troughs = [pts[0][1]] + [t for s, t in pts if s == "trough"] + [pts[-1][1]]
-    row_boxes = [trim_box(image_black, (t, b, 0, image.shape[1])) for t, b in zip(troughs, troughs[1:])]
+    row_boxes = [trim_box(image_black, (t, b, 0, image.shape[1]), further_trim) for t, b in zip(troughs, troughs[1:])]
     # row_boxes = []
     # for i, (s, t) in enumerate(pts):
     #     if s == "peak":
@@ -277,7 +279,7 @@ def ocr(filename, image, ocr_cache, verbose=False, predict=True):
         pts = peak_troughs(cols, size=15, thresh=0.01)
         for i, (s, t) in enumerate(pts):
             if s == "peak":
-                boxes.append(trim_box(image_black, (rl, rh, pts[i - 1][1], pts[i + 1][1])))
+                boxes.append(trim_box(image_black, (rl, rh, pts[i - 1][1], pts[i + 1][1]), further_trim))
                 # boxes.append((rl, rh, pts[i - 1][1], pts[i + 1][1]))
         col_boxes.append(link_col_boxes(boxes))
 
@@ -406,7 +408,7 @@ class Tabstopper:
 一至十 = "一二三四五六七八九十"
 
 
-def split_number(s, patterns=["1234567890", "一二三四五六七八九十"], noise=".、()"):
+def split_number(s, patterns=["1234567890", 一至十], noise=".、()："):
     for pattern in patterns:
         i = 0
         number = False
@@ -439,15 +441,19 @@ def match_chapter(sme, start, end):
 
 def split_chapter(s, end=("部", "章", "節", "段")):
     if s.startswith("第"):
-        number, content = split_number(s[1:], 一至十)
+        number, content = split_number(s[1:], [一至十])
         if number and content.startswith(end):
             return s[0] + number + content[0], content[1:].strip()
     elif s.startswith("分論"):
-        number, content = split_number(s[2:], 一至十)
+        number, content = split_number(s[2:], [一至十])
         if number:
             return s[:2] + number, content.strip()
     elif s.startswith("附錄"):
         return s[:2], s[2:].strip()
+    elif s.startswith("附識"):
+        number, content = split_number(s[2:], [一至十])
+        if number and content:
+            return s[:2] + number + content[0], content[1:].strip()
     return "", s
 
 
