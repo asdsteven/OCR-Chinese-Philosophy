@@ -11,7 +11,7 @@ import mzs
 text_width = 1270
 input_dir = "牟宗三全集6 心體與性體（第二冊）/"
 tex = density.TexWriter(os.path.join(input_dir, "ocr.tex"), os.path.join(input_dir, "crosscheck.tex"))
-tex.write(mzs.preemble, mode="w")
+tex.write(mzs.preemble, "w")
 tex.write(r"""\renewcommand{\chaptermark}[1]{\markboth{心體與性體 \quad 第二冊}{}}
 \renewcommand{\sectionmark}[1]{\markboth{心體與性體 \quad 第二冊}{}}
 \renewcommand{\subsectionmark}[1]{\markboth{心體與性體 \quad 第二冊}{}}
@@ -115,7 +115,7 @@ for matter, page_number, filename in pages:
         rows, output_image = density.ocr(filename, image / 255, ocr_cache)
         media_rows = [("text", bound, box_texts) for bound, box_texts in rows]
         left_margin = mzs.write_header(tex, matter, page_number, media_rows[0], text_width)
-        prev_page_state = mzs.write_page(tex, tabstopper, matter, page_number, media_rows[1:], left_margin, image_black, prev_page_state)
+        prev_page_state = mzs.write_page(tex, matter, page_number, media_rows[1:], left_margin, tabstopper, image_black, prev_page_state)
 
         page_bound = media_rows[0][1]
         for media, bound, _ in media_rows[1:]:
